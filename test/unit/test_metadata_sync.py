@@ -69,6 +69,25 @@ class TestMetadataSync(unittest.TestCase):
         self.assertFalse(self.sync._parse_json)
         self.assertEqual(None, self.sync._pipeline)
 
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.MetadataSync._verify_mapping')
+    def test_tls_parameters(self, mock_verify_mapping, mock_es):
+        sync_conf = {'es_hosts': self.es_hosts,
+                     'index': self.test_index,
+                     'account': self.test_account,
+                     'container': self.test_container,
+                     'verify_certs': False,
+                     'ca_certs': "/no/such/pemfile"}
+        es_mock = mock_es.return_value
+        es_mock.info.return_value = {'version': {'number': '5.4.0'}}
+        metadata_sync.MetadataSync(self.status_dir, sync_conf)
+        mock_es.assert_called_once_with(
+            self.es_hosts,
+            ca_certs='/no/such/pemfile',
+            verify_certs=False)
+
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_get_last_row_nonexistent(self, exists_mock):
         exists_mock.return_value = False

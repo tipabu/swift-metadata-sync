@@ -39,6 +39,10 @@ For each Swift Account/Container, an elasticsearch cluster (`es_hosts`) and
 index (`index`) must be specified. The hosts argument accepts multiple,
 comma-separated entries to specify numerous servers.
 
+If your Elasticsearch cluster uses HTTPS for client communications, you can also
+use the `ca_certs` and `verify_certs` settings to control TLS certificate trust.
+See [the Python Elasticsearch Client docs](https://elasticsearch-py.readthedocs.io/en/master/connection.html#elasticsearch.Urllib3HttpConnection) for more details.
+
 If an index is changed and a re-index is desired, changing a container mapping's
 `index` value will restart indexing from the first object in that container.
 

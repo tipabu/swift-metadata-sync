@@ -37,7 +37,12 @@ class MetadataSync(BaseSync):
 
         self.logger = logging.getLogger('swift-metadata-sync')
         es_hosts = settings['es_hosts']
-        self._es_conn = elasticsearch.Elasticsearch(es_hosts)
+        kwargs = {}
+        if 'ca_certs' in settings:
+            kwargs['ca_certs'] = settings['ca_certs']
+        if 'verify_certs' in settings:
+            kwargs['verify_certs'] = settings['verify_certs']
+        self._es_conn = elasticsearch.Elasticsearch(es_hosts, **kwargs)
         self._server_version = StrictVersion(
             self._es_conn.info()['version']['number'])
         self._index = settings['index']
