@@ -295,6 +295,9 @@ class MetadataSync(BaseSync):
                 continue
             if field not in meta:
                 continue
+            if MetadataSync.DOC_MAPPING[field]['type'] == 'boolean':
+                es_doc[field] = str(meta[field]).lower()
+                continue
             es_doc[field] = meta[field]
         return es_doc
 
