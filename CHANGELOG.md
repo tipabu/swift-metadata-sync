@@ -1,3 +1,9 @@
+# 0.0.12 (2018-10-07)
+
+Improvements:
+
+    - Update for the new ContainerCrawler library release.
+
 ## 0.0.11 (2018-06-08)
 
 Features:
