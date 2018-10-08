@@ -29,6 +29,9 @@ class MetadataSync(BaseSync):
     }
     USER_META_PREFIX = 'x-object-meta-'
 
+    PROCESSED_ROW = 'last_row'
+    VERIFIED_ROW = 'last_verified_row'
+
     def __init__(self, status_dir, settings, per_account=False):
         super(MetadataSync, self).__init__(status_dir, settings, per_account)
 
@@ -42,7 +45,7 @@ class MetadataSync(BaseSync):
         self._pipeline = settings.get('pipeline')
         self._verify_mapping()
 
-    def get_last_row(self, db_id):
+    def _get_row(self, row_field, db_id):
         if not os.path.exists(self._status_file):
             return 0
         with open(self._status_file) as f:
@@ -52,20 +55,25 @@ class MetadataSync(BaseSync):
                 if not entry:
                     return 0
                 if entry['index'] == self._index:
-                    return entry['last_row']
-                else:
-                    return 0
+                    try:
+                        return entry[row_field]
+                    except KeyError:
+                        if row_field == self.VERIFIED_ROW:
+                            return entry.get(self.PROCESSED_ROW, 0)
+                return 0
             except ValueError:
                 return 0
-        return 0
 
-    def save_last_row(self, row_id, db_id):
+    def _save_row(self, row_id, row_field, db_id):
         if not os.path.exists(self._status_account_dir):
             os.mkdir(self._status_account_dir)
         if not os.path.exists(self._status_file):
+            new_rows = {self.PROCESSED_ROW: 0,
+                        self.VERIFIED_ROW: 0,
+                        'index': self._index}
+            new_rows[row_field] = row_id
             with open(self._status_file, 'w') as f:
-                json.dump({db_id: dict(last_row=row_id,
-                                       index=self._index)}, f)
+                json.dump({db_id: new_rows}, f)
                 return
 
         with open(self._status_file, 'r+') as f:
@@ -73,11 +81,32 @@ class MetadataSync(BaseSync):
                 status = json.load(f)
             except ValueError:
                 status = {}
-            status[db_id] = dict(last_row=row_id, index=self._index)
+            new_rows = {'index': self._index,
+                        self.PROCESSED_ROW: 0,
+                        self.VERIFIED_ROW: 0}
+            if db_id in status:
+                old_processed_row = status[db_id][self.PROCESSED_ROW]
+                new_rows[self.PROCESSED_ROW] = old_processed_row
+                new_rows[self.VERIFIED_ROW] =\
+                    status[db_id].get(self.VERIFIED_ROW, old_processed_row)
+            new_rows[row_field] = row_id
+
+            status[db_id] = new_rows
             f.seek(0)
             json.dump(status, f)
             f.truncate()
-            return
+
+    def get_last_processed_row(self, db_id):
+        return self._get_row(self.PROCESSED_ROW, db_id)
+
+    def get_last_verified_row(self, db_id):
+        return self._get_row(self.VERIFIED_ROW, db_id)
+
+    def save_last_processed_row(self, row_id, db_id):
+        return self._save_row(row_id, self.PROCESSED_ROW, db_id)
+
+    def save_last_verified_row(self, row_id, db_id):
+        return self._save_row(row_id, self.VERIFIED_ROW, db_id)
 
     def handle(self, rows, internal_client):
         self.logger.debug("Handling rows: %s" % repr(rows))

@@ -72,7 +72,7 @@ class TestMetadataSync(unittest.TestCase):
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
     def test_get_last_row_nonexistent(self, exists_mock):
         exists_mock.return_value = False
-        self.assertEqual(0, self.sync.get_last_row('bogus-id'))
+        self.assertEqual(0, self.sync.get_last_processed_row('bogus-id'))
 
     @mock.patch('__builtin__.open')
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
@@ -80,7 +80,7 @@ class TestMetadataSync(unittest.TestCase):
         exists_mock.return_value = True
         status = {'db_id': {'last_row': 42, 'index': self.test_index}}
         open_mock.return_value = self.FakeFile(json.dumps(status))
-        self.assertEqual(0, self.sync.get_last_row('bogus-id'))
+        self.assertEqual(0, self.sync.get_last_processed_row('bogus-id'))
 
     @mock.patch('__builtin__.open')
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
@@ -88,7 +88,15 @@ class TestMetadataSync(unittest.TestCase):
         exists_mock.return_value = True
         status = {'db_id': {'last_row': 42, 'index': self.test_index}}
         open_mock.return_value = self.FakeFile(json.dumps(status))
-        self.assertEqual(42, self.sync.get_last_row('db_id'))
+        self.assertEqual(42, self.sync.get_last_processed_row('db_id'))
+
+    @mock.patch('__builtin__.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_get_last_verified_row_new(self, exists_mock, open_mock):
+        exists_mock.return_value = True
+        status = {'db_id': {'last_row': 42, 'index': self.test_index}}
+        open_mock.return_value = self.FakeFile(json.dumps(status))
+        self.assertEqual(42, self.sync.get_last_verified_row('db_id'))
 
     @mock.patch('__builtin__.open')
     @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
@@ -97,7 +105,18 @@ class TestMetadataSync(unittest.TestCase):
         status = {'db_id': {'last_row': 42, 'index': 'old-index'}}
         fake_file = self.FakeFile(json.dumps(status))
         open_mock.return_value = fake_file
-        self.assertEqual(0, self.sync.get_last_row('db_id'))
+        self.assertEqual(0, self.sync.get_last_processed_row('db_id'))
+        self.assertTrue(fake_file.closed)
+
+    @mock.patch('__builtin__.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_get_last_verified_row(self, exists_mock, open_mock):
+        exists_mock.return_value = True
+        status = {'db_id': {'last_row': 42, 'last_verified_row': 12,
+                            'index': self.test_index}}
+        fake_file = self.FakeFile(json.dumps(status))
+        open_mock.return_value = fake_file
+        self.assertEqual(12, self.sync.get_last_verified_row('db_id'))
         self.assertTrue(fake_file.closed)
 
     @mock.patch('__builtin__.open')
@@ -105,7 +124,7 @@ class TestMetadataSync(unittest.TestCase):
     def test_get_last_row_malformed_status(self, exists_mock, open_mock):
         exists_mock.return_value = True
         open_mock.return_value = self.FakeFile('')
-        self.assertEqual(0, self.sync.get_last_row('db_id'))
+        self.assertEqual(0, self.sync.get_last_processed_row('db_id'))
 
     @mock.patch('swift_metadata_sync.metadata_sync.os.mkdir')
     @mock.patch('__builtin__.open')
@@ -115,13 +134,15 @@ class TestMetadataSync(unittest.TestCase):
         exists_mock.return_value = False
         fake_file = self.FakeFile('')
         open_mock.return_value = fake_file
-        self.sync.save_last_row(42, 'db-id')
+        self.sync.save_last_processed_row(42, 'db-id')
 
         mkdir_mock.assert_called_once_with(self.sync._status_account_dir)
         self.assertTrue(fake_file.closed)
         status = json.loads(fake_file.data)
         self.assertIn('db-id', status)
         self.assertEqual(42, status['db-id']['last_row'])
+        self.assertEqual(
+            0, status['db-id'][metadata_sync.MetadataSync.VERIFIED_ROW])
         self.assertEqual(self.test_index, status['db-id']['index'])
 
     @mock.patch('swift_metadata_sync.metadata_sync.os.mkdir')
@@ -137,13 +158,15 @@ class TestMetadataSync(unittest.TestCase):
         fake_file = self.FakeFile('')
         exists_mock.side_effect = fake_exists
         open_mock.return_value = fake_file
-        self.sync.save_last_row(42, 'db-id')
+        self.sync.save_last_processed_row(42, 'db-id')
 
         mkdir_mock.assert_not_called()
         self.assertTrue(fake_file.closed)
         status = json.loads(fake_file.data)
         self.assertIn('db-id', status)
         self.assertEqual(42, status['db-id']['last_row'])
+        self.assertEqual(
+            0, status['db-id'][metadata_sync.MetadataSync.VERIFIED_ROW])
         self.assertEqual(self.test_index, status['db-id']['index'])
 
     @mock.patch('__builtin__.open')
@@ -154,15 +177,52 @@ class TestMetadataSync(unittest.TestCase):
         exists_mock.return_value = True
         open_mock.return_value = fake_file
 
-        self.sync.save_last_row(42, 'new-id')
+        self.sync.save_last_processed_row(42, 'new-id')
         self.assertTrue(fake_file.closed)
         status = json.loads(fake_file.data)
         self.assertIn('new-id', status)
         self.assertIn('old_id', status)
         self.assertEqual(42, status['new-id']['last_row'])
+        self.assertEqual(
+            0, status['new-id'][metadata_sync.MetadataSync.VERIFIED_ROW])
         self.assertEqual(self.test_index, status['new-id']['index'])
         self.assertEqual(1, status['old_id']['last_row'])
         self.assertEqual(self.test_index, status['old_id']['index'])
+
+    @mock.patch('__builtin__.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_save_last_row_new_verified(self, exists_mock, open_mock):
+        status = {'id': {'last_row': 30, 'index': self.test_index}}
+        fake_file = self.FakeFile(json.dumps(status))
+        exists_mock.return_value = True
+        open_mock.return_value = fake_file
+
+        self.sync.save_last_processed_row(42, 'id')
+        self.assertTrue(fake_file.closed)
+        status = json.loads(fake_file.data)
+        self.assertIn('id', status)
+        self.assertEqual(42, status['id']['last_row'])
+        self.assertEqual(
+            30, status['id'][metadata_sync.MetadataSync.VERIFIED_ROW])
+        self.assertEqual(self.test_index, status['id']['index'])
+
+    @mock.patch('__builtin__.open')
+    @mock.patch('swift_metadata_sync.metadata_sync.os.path.exists')
+    def test_save_last_verified_row_update(self, exists_mock, open_mock):
+        status = {'id': {'last_row': 30, 'verified_row': 25,
+                         'index': self.test_index}}
+        fake_file = self.FakeFile(json.dumps(status))
+        exists_mock.return_value = True
+        open_mock.return_value = fake_file
+
+        self.sync.save_last_verified_row(42, 'id')
+        self.assertTrue(fake_file.closed)
+        status = json.loads(fake_file.data)
+        self.assertIn('id', status)
+        self.assertEqual(30, status['id']['last_row'])
+        self.assertEqual(
+            42, status['id'][metadata_sync.MetadataSync.VERIFIED_ROW])
+        self.assertEqual(self.test_index, status['id']['index'])
 
     @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
     def test_handle_delete(self, helpers_mock):
