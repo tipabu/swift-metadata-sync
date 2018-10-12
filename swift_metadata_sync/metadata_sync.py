@@ -338,3 +338,14 @@ class MetadataSync(BaseSync):
                       self._container.encode('utf-8'),
                       row['name']])
         ).hexdigest()
+
+
+class MetadataSyncFactory(object):
+    def __init__(self, config):
+        self._conf = config
+        if not config.get('status_dir'):
+            raise RuntimeError('Configuration option "status_dir" is missing')
+
+    def instance(self, settings, per_account=False):
+        return MetadataSync(
+            self._conf['status_dir'], settings, per_account=per_account)

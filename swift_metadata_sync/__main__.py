@@ -5,7 +5,7 @@ import os
 import traceback
 
 from container_crawler import ContainerCrawler
-from .metadata_sync import MetadataSync
+from .metadata_sync import MetadataSyncFactory
 
 
 def setup_logger(console=False, log_file=None, level='INFO'):
@@ -55,12 +55,13 @@ def main():
     conf = load_config(args.config)
     setup_logger(console=args.console, level=args.log_level.upper(),
                  log_file=conf.get('log_file'))
+    factory = MetadataSyncFactory(conf)
 
     logger = logging.getLogger('swift-metadata-sync')
     logger.info('Starting Swift Metadata Sync')
     try:
         conf['bulk_process'] = True
-        crawler = ContainerCrawler(conf, MetadataSync, logger)
+        crawler = ContainerCrawler(conf, factory, logger)
         if args.once:
             crawler.run_once()
         else:

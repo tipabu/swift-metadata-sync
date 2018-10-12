@@ -731,3 +731,40 @@ class TestMetadataSync(unittest.TestCase):
               'pipeline': 'test-pipeline'}],
             raise_on_error=False,
             raise_on_exception=False)
+
+
+class TestMetadataSyncFactory(unittest.TestCase):
+    def test_raise_error_if_missing_status_dir(self):
+        with self.assertRaises(RuntimeError) as ctx:
+            metadata_sync.MetadataSyncFactory({})
+        self.assertIn('"status_dir" is missing', ctx.exception.message)
+
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    def test_instance(self, elastic_constructor_mock, index_mock):
+        config = {'status_dir': '/foo/bar'}
+        instance_settings = {
+            'es_hosts': ['http://elastic.foo', 'http://elastic.bar'],
+            'index': 'test-index',
+            'account': 'AUTH_test-account',
+            'container': 'test-container',
+            'parse_json': True,
+            'pipeline': 'es-pipeline'}
+        mock_es = mock.Mock()
+        mock_es.info.return_value = {'version': {'number': '6.1.1'}}
+        elastic_constructor_mock.return_value = mock_es
+        index_mock.return_value.get_mapping.return_value = {
+            instance_settings['index']: {
+                'mappings': metadata_sync.MetadataSync.DOC_MAPPING}}
+
+        factory = metadata_sync.MetadataSyncFactory(config)
+        instance = factory.instance(instance_settings, True)
+        self.assertTrue(instance._per_account)
+        elastic_constructor_mock.assert_called_once_with(
+            instance_settings['es_hosts'])
+        self.assertTrue(instance._parse_json)
+        self.assertEqual(instance_settings['account'], instance._account)
+        self.assertEqual(instance_settings['container'], instance._container)
+        self.assertEqual(instance_settings['index'], instance._index)

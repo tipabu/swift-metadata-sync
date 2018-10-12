@@ -5,7 +5,7 @@ RUN apt-get update &&\
     apt-get clean &&\
     rm -rf /var/lib/apt/lists/*
 
-RUN pip install -e git://github.com/swiftstack/container-crawler.git@0.0.16#egg=container-crawler && \
+RUN pip install -e git://github.com/swiftstack/container-crawler.git@0.0.17#egg=container-crawler && \
     pip install -U coverage nose flake8==3.5.0 mock && \
     pip install -U elasticsearch==5.4.0 && \
     pip uninstall -y hacking
