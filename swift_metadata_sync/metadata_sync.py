@@ -346,6 +346,9 @@ class MetadataSyncFactory(object):
         if not config.get('status_dir'):
             raise RuntimeError('Configuration option "status_dir" is missing')
 
+    def __str__(self):
+        return 'MetadataSync'
+
     def instance(self, settings, per_account=False):
         return MetadataSync(
             self._conf['status_dir'], settings, per_account=per_account)
