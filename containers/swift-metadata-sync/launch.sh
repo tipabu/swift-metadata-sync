@@ -7,6 +7,8 @@ set -e
 find /var/lib/ -name *.pid -delete
 find /var/run/ -name *.pid -delete
 
+cp -f /swift-metadata-sync/containers/swift-metadata-sync/proxy-server.conf /etc/swift
+
 # Copied from the docker swift container. Unfortunately, there is no way to
 # plugin an additional invocation to start swift-s3-sync, so we had to do this.
 /usr/sbin/service rsyslog start
@@ -28,11 +30,7 @@ mkdir -p /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 \
 
 /usr/bin/sudo -u swift /swift/bin/startmain
 
-PYTHONPATH=/opt/ss/lib/python2.7/dist-packages:/swift-metadata-sync \
-    python -m swift_metadata_sync --log-level debug \
-    --config /swift-metadata-sync/test/container/swift-metadata-sync.conf &
-
-/usr/bin/sudo -u elastic /bin/bash /elasticsearch-5.5.2/bin/elasticsearch \
+/usr/bin/sudo -u elastic /bin/bash /elasticsearch-${ES_VERSION}/bin/elasticsearch \
     2>&1 > /var/log/elasticsearch.log &
 
 /usr/local/bin/supervisord -n -c /etc/supervisord.conf
