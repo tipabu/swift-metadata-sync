@@ -1,3 +1,21 @@
+## 0.0.15 (2018-12-17)
+
+Features:
+
+- Allow for specifying whether Elasticsearch server's SSL certificate should be
+  verified by specifying the `verify_certs` mapping option.
+- Added a mapping option -- `ca_certs` -- to specify the certificate authority
+  (CA) bundle to use for verifying the Elasticsearch server's certificate.
+
+Bug fixes:
+
+- Fixed an issue where static large objects could not be indexed. The fix
+  applies to other boolean fields as well.
+
+Improvements:
+
+- Updated to version 0.1.1 of the ContainerCrawler library.
+
 ## 0.0.14 (2018-11-29)
 
 Improvements:
