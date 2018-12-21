@@ -1,3 +1,9 @@
+## 0.0.15.1 (2018-12-21)
+
+Improvements:
+
+- Allow for using an older release of elasticsearch-py.
+
 ## 0.0.15 (2018-12-17)
 
 Features:
