@@ -4,7 +4,7 @@ import elasticsearch
 import hashlib
 import json
 import os
-from swift_metadata_sync import metadata_sync
+from swift_metadata_sync import metadata_sync, metadata_sync_factory
 
 
 class EphemeralMetadataSync(metadata_sync.MetadataSync):
@@ -29,7 +29,7 @@ class EphemeralMetadataSync(metadata_sync.MetadataSync):
         self._status[db_id][row_field] = row_id
 
 
-class EphemeralMetadataSyncFactory(metadata_sync.MetadataSyncFactory):
+class EphemeralMetadataSyncFactory(metadata_sync_factory.MetadataSyncFactory):
     def __init__(self, config):
         super(EphemeralMetadataSyncFactory, self).__init__(config)
         self._statuses = collections.defaultdict(dict)
