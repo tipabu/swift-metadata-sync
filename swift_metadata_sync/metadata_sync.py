@@ -346,4 +346,3 @@ class MetadataSync(BaseSync):
                       self._container.encode('utf-8'),
                       row['name']])
         ).hexdigest()
-
