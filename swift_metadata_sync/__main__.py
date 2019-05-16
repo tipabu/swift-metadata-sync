@@ -5,7 +5,7 @@ import os
 import traceback
 
 from container_crawler.crawler import Crawler
-from .metadata_sync import MetadataSyncFactory
+from metadata_sync_factory import MetadataSyncFactory
 
 
 def setup_logger(console=False, log_file=None, level='INFO'):

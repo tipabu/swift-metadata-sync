@@ -4,7 +4,7 @@ import json
 import mock
 import unittest
 
-from swift_metadata_sync import metadata_sync
+from swift_metadata_sync import metadata_sync_factory, metadata_sync
 
 
 class TestMetadataSync(unittest.TestCase):
@@ -796,14 +796,14 @@ class TestMetadataSync(unittest.TestCase):
 class TestMetadataSyncFactory(unittest.TestCase):
     def test_raise_error_if_missing_status_dir(self):
         with self.assertRaises(RuntimeError) as ctx:
-            metadata_sync.MetadataSyncFactory({})
+            metadata_sync_factory.MetadataSyncFactory({})
         self.assertIn('"status_dir" is missing', ctx.exception.message)
 
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
-    def test_instance(self, elastic_constructor_mock, index_mock):
+    def test_es_instance(self, elastic_constructor_mock, index_mock):
         config = {'status_dir': '/foo/bar'}
         instance_settings = {
             'es_hosts': ['http://elastic.foo', 'http://elastic.bar'],
@@ -811,6 +811,7 @@ class TestMetadataSyncFactory(unittest.TestCase):
             'account': 'AUTH_test-account',
             'container': 'test-container',
             'parse_json': True,
+            'meta_sync_provider': 'elastic_search',
             'pipeline': 'es-pipeline'}
         mock_es = mock.Mock()
         mock_es.info.return_value = {'version': {'number': '6.1.1'}}
@@ -819,7 +820,7 @@ class TestMetadataSyncFactory(unittest.TestCase):
             instance_settings['index']: {
                 'mappings': metadata_sync.MetadataSync.DOC_MAPPING}}
 
-        factory = metadata_sync.MetadataSyncFactory(config)
+        factory = metadata_sync_factory.MetadataSyncFactory(config)
         instance = factory.instance(instance_settings, True)
         self.assertTrue(instance._per_account)
         elastic_constructor_mock.assert_called_once_with(
@@ -828,3 +829,24 @@ class TestMetadataSyncFactory(unittest.TestCase):
         self.assertEqual(instance_settings['account'], instance._account)
         self.assertEqual(instance_settings['container'], instance._container)
         self.assertEqual(instance_settings['index'], instance._index)
+
+    @mock.patch(
+        'swift_metadata_sync.kafka_sync.kafka.KafkaProducer')
+    def test_kafka_instance(self, producer_mock):
+        config = {'status_dir': '/foo/bar'}
+        instance_settings = {
+            'kafka_servers': 'kafka.foo:9092',
+            'topic': 'test-topic',
+            'account': 'AUTH_test-account',
+            'container': 'test-container',
+            'parse_json': True,
+            'cluster_id': 'cluster1',
+            'memcache_servers': 'localhost:11211',
+            'meta_sync_provider': 'kafka'}
+        factory = metadata_sync_factory.MetadataSyncFactory(config)
+        instance = factory.instance(instance_settings, True)
+        self.assertTrue(instance._per_account)
+        self.assertTrue(instance._parse_json)
+        self.assertEqual(instance_settings['account'], instance._account)
+        self.assertEqual(instance_settings['container'], instance._container)
+        self.assertEqual(instance_settings['topic'], instance._topic)
