@@ -630,7 +630,12 @@ class TestMetadataSync(unittest.TestCase):
                        'error': {
                            'root_cause': 'index failed',
                            'caused_by': {'reason': 'more details'}}
-                       }}
+                       }},
+            {'index': {'status': 400, '_id': 'object_3',
+                       'error': {
+                           'reason': 'new error format error',
+                           'caused_by': {'reason': 'some error'}}}},
+            {'index': {'status': 400, '_id': 'object_4', 'error': {}}},
         ])
         swift_mock = mock.Mock()
         swift_mock.get_object_metadata.return_value = {
@@ -643,9 +648,11 @@ class TestMetadataSync(unittest.TestCase):
             self.sync.handle(rows, swift_mock)
 
         expected_error_calls = [
-            mock.call("object_0: 400"),
-            mock.call("object_1: index failure reason"),
-            mock.call("object_2: index failed: more details")
+            mock.call('object_0: 400'),
+            mock.call('object_1: index failure reason'),
+            mock.call('object_2: index failed: more details'),
+            mock.call('object_3: new error format error: some error'),
+            mock.call('object_4: Unspecified error: 400')
         ]
         self.sync.logger.error.assert_has_calls(expected_error_calls)
 

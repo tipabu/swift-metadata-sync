@@ -315,10 +315,15 @@ class MetadataSync(BaseSync):
 
     @staticmethod
     def _extract_error(err_info):
-        if 'error' not in err_info or 'root_cause' not in err_info['error']:
+        if 'error' not in err_info:
             return str(err_info['status'])
 
-        err = err_info['error']['root_cause']
+        if 'root_cause' in err_info['error']:
+            err = err_info['error']['root_cause']
+        elif 'reason' in err_info['error']:
+            err = err_info['error']['reason']
+        else:
+            err = 'Unspecified error: {}'.format(err_info['status'])
         try:
             return '%s: %s' % (err, err_info['error']['caused_by']['reason'])
         except KeyError:
