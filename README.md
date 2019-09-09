@@ -79,7 +79,7 @@ Testing it out
 
 You can build a docker container with a Swift all-in-one and elasticsearch to
 try out metadata search. The container is defined in `test/container`. To build
-it, run: `docker build -t metadata-sync test/container` (this will tag the
+it, run: `docker build -t metadata-sync containers/swift-metadata-sync` (this will tag the
 docker image as `metadata-sync`). Once the container is built, you can launch it
 as follows (assuming you're in the root directory of the swift-metadata-sync
 repository):
@@ -92,6 +92,6 @@ and elasticsearch is on 9200. To check the port mappings, use:
 `docker port <container-name>`.
 
 Once the container is running, you can use the Swift cluster as expected. The
-default mappings are configured in `test/container/swift-metadata-sync.json`. If
+default mappings are configured in `containers/swift-metadata-sync/swift-metadata-sync.json`. If
 you create the `es-test` container and an index named `es-test`, you should see
 the objects' metadata appear in elasticsearch.
