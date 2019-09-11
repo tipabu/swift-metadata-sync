@@ -1,3 +1,10 @@
+## 0.0.17 (2019-09-11)
+
+Bug fixes:
+
+- Fixed error reporting for bulk indexing operations with newer versions of
+  Elasticsearch to include the error details.
+
 ## 0.0.16 (2019-04-16)
 
 Improvements:
