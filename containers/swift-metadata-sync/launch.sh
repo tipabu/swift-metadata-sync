@@ -33,4 +33,7 @@ mkdir -p /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 \
 /usr/bin/sudo -u elastic /bin/bash /elasticsearch-${ES_VERSION}/bin/elasticsearch \
     2>&1 > /var/log/elasticsearch.log &
 
+/usr/bin/sudo -u elastic /bin/bash /elasticsearch-${OLD_ES_VERSION}/bin/elasticsearch \
+    2>&1 > /var/log/old-elasticsearch.log
+
 /usr/local/bin/supervisord -n -c /etc/supervisord.conf

@@ -10,5 +10,6 @@ script:
     - docker exec -it `cat ${container_id}` /bin/bash -c 'cd /swift-metadata-sync; flake8'
     - docker exec -it `cat ${container_id}` /bin/bash -c 'cd /swift-metadata-sync; nosetests --with-coverage --cover-erase --cover-package=swift_metadata_sync --cover-branches test/unit'
     - docker exec `cat ${container_id}` timeout 30 bash -c 'until echo > /dev/tcp/localhost/8080; do sleep 1; done'
-    - docker exec `cat ${container_id}` timeout 30 bash -c 'until echo > /dev/tcp/localhost/9200; do sleep 1; done'
+    - docker exec `cat ${container_id}` timeout 60 bash -c 'until echo > /dev/tcp/localhost/9200; do sleep 1; done'
+    - docker exec `cat ${container_id}` timeout 60 bash -c 'until echo > /dev/tcp/localhost/9201; do sleep 1; done'
     - docker exec -it `cat ${container_id}` /bin/bash -c 'cd /swift-metadata-sync; nosetests test/integration'

@@ -13,7 +13,8 @@ from container_crawler.base_sync import BaseSync
 
 
 class MetadataSync(BaseSync):
-    DOC_TYPE = 'object'
+    OLD_DOC_TYPE = 'object'
+    DEFAULT_DOC_TYPE = '_doc'
     DOC_MAPPING = {
         "content-length": {"type": "long"},
         "content-type": {"type": "string"},
@@ -122,11 +123,13 @@ class MetadataSync(BaseSync):
         bulk_delete_ops = []
         mget_map = {}
         for row in rows:
+            op = {'_op_type': 'delete',
+                  '_id': self._get_document_id(row),
+                  '_index': self._index}
+            if self._server_version < StrictVersion('7.0'):
+                op['_type'] = self._doc_type
             if row['deleted']:
-                bulk_delete_ops.append({'_op_type': 'delete',
-                                        '_id': self._get_document_id(row),
-                                        '_index': self._index,
-                                        '_type': self.DOC_TYPE})
+                bulk_delete_ops.append(op)
                 continue
             mget_map[self._get_document_id(row)] = row
 
@@ -145,7 +148,7 @@ class MetadataSync(BaseSync):
             self._es_conn,
             update_ops,
             raise_on_error=False,
-            raise_on_exception=False
+            raise_on_exception=False,
         )
         self.logger.debug("Index operations: %s" % repr(update_ops))
 
@@ -171,7 +174,7 @@ class MetadataSync(BaseSync):
         success_count, delete_failures = elasticsearch.helpers.bulk(
             self._es_conn, ops,
             raise_on_error=False,
-            raise_on_exception=False
+            raise_on_exception=False,
         )
 
         for op in delete_failures:
@@ -222,7 +225,6 @@ class MetadataSync(BaseSync):
             self._account, self._container, row['name'], headers=swift_hdrs)
         op = {'_op_type': 'index',
               '_index': self._index,
-              '_type': self.DOC_TYPE,
               '_source': self._create_es_doc(meta, self._account,
                                              self._container,
                                              row['name'].decode('utf-8'),
@@ -230,6 +232,8 @@ class MetadataSync(BaseSync):
               '_id': doc_id}
         if self._pipeline:
             op['pipeline'] = self._pipeline
+        if self._server_version < StrictVersion('7.0'):
+            op['_type'] = self._doc_type
         return op
 
     """
@@ -239,20 +243,38 @@ class MetadataSync(BaseSync):
     def _verify_mapping(self):
         index_client = elasticsearch.client.IndicesClient(self._es_conn)
         try:
-            mapping = index_client.get_mapping(index=self._index,
-                                               doc_type=self.DOC_TYPE)
+            mapping = index_client.get_mapping(index=self._index)
         except elasticsearch.TransportError as e:
             if e.status_code != 404:
                 raise
             if e.error != 'type_missing_exception':
                 raise
             mapping = {}
-        if not mapping.get(self._index, None) or \
-                self.DOC_TYPE not in mapping[self._index]['mappings']:
+        if not mapping.get(self._index, {}).get('mappings'):
             missing_fields = self.DOC_MAPPING.keys()
+            # Document types are deprecated and will be removed. Previously, we
+            # used the type "object" (OLD_DOC_TYPE). New indices (with no
+            # mappings) in Elasticsearch 6.x use type _doc. Elasticsearch 7
+            # omits types altogether.
+            self._doc_type = self.DEFAULT_DOC_TYPE
         else:
-            current_mapping = mapping[self._index]['mappings'][
-                self.DOC_TYPE]['properties']
+            if 'properties' in mapping[self._index]['mappings']:
+                self._doc_type = self.DEFAULT_DOC_TYPE
+                current_mapping = mapping[self._index]['mappings'][
+                    'properties']
+            else:
+                if self.OLD_DOC_TYPE in mapping[self._index]['mappings']:
+                    self._doc_type = self.OLD_DOC_TYPE
+                else:
+                    self._doc_type = self.DEFAULT_DOC_TYPE
+                if self._doc_type not in mapping[self._index]['mappings']:
+                    raise RuntimeError(
+                        'Cannot set more than one mapping type for index {}. '
+                        'Known types: {}'.format(
+                            self._index,
+                            mapping[self._index]['mappings'].keys()))
+                current_mapping = mapping[self._index]['mappings'][
+                    self._doc_type]['properties']
             # We are not going to force re-indexing, so won't be checking the
             # mapping format
             missing_fields = [key for key in self.DOC_MAPPING.keys()
@@ -267,8 +289,14 @@ class MetadataSync(BaseSync):
             if self._server_version >= StrictVersion('5.0'):
                 new_mapping = dict([(k, self._update_string_mapping(v))
                                     for k, v in new_mapping.items()])
-            index_client.put_mapping(index=self._index, doc_type=self.DOC_TYPE,
-                                     body={'properties': new_mapping})
+            if self._doc_type == self.DEFAULT_DOC_TYPE:
+                index_client.put_mapping(index=self._index,
+                                         body={'properties': new_mapping},
+                                         include_type_name=False)
+            else:
+                index_client.put_mapping(index=self._index,
+                                         body={'properties': new_mapping},
+                                         doc_type=self._doc_type)
 
     @staticmethod
     def _create_es_doc(meta, account, container, key, parse_json=False):

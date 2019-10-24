@@ -1,6 +1,7 @@
 import elasticsearch
 import json
-import mock
+import logging
+import os
 import random
 import string
 import swiftclient
@@ -9,6 +10,9 @@ import utils
 
 
 class MetadataSyncTest(unittest.TestCase):
+    ES_HOST = 'https://localhost:9200'
+    ES_VERSION = os.environ['ES_VERSION']
+
     def _get_container(self, container=None):
         if not container:
             container = u'\062a' + ''.join([
@@ -23,19 +27,19 @@ class MetadataSyncTest(unittest.TestCase):
                 random.choice(string.ascii_lowercase) for _ in range(8)])
         if self.es_conn.indices.exists(index):
             self.es_conn.indices.delete(index)
-        self.es_conn.indices.create(index)
+        self.es_conn.indices.create(index, include_type_name=False)
         self.indices.append(index)
         return index
 
     def setUp(self):
-        self.logger = mock.Mock()
+        self.logger = logging.getLogger('test-metadata-sync')
+        self.logger.addHandler(logging.StreamHandler())
         self.client = swiftclient.client.Connection(
             'http://localhost:8080/auth/v1.0',
             u'\u062aacct:\u062auser',
             u'\u062apass')
-        self.es_host = 'https://localhost:9200'
         self.es_conn = utils.get_es_connection(
-            self.es_host, True, utils.get_ca_cert())
+            self.ES_HOST, True, utils.get_ca_cert(self.ES_VERSION))
         self.containers = []
         self.indices = []
         self.index = self._get_index()
@@ -45,9 +49,9 @@ class MetadataSyncTest(unittest.TestCase):
                 {'account': u'AUTH_\u062aacct',
                  'container': self.container,
                  'index': self.index,
-                 'es_hosts': self.es_host,
+                 'es_hosts': self.ES_HOST,
                  'verify_certs': True,
-                 'ca_certs': utils.get_ca_cert()}
+                 'ca_certs': utils.get_ca_cert(self.ES_VERSION)}
             ],
         }
         self.indexer = utils.get_metadata_sync_instance(
@@ -75,7 +79,7 @@ class MetadataSyncTest(unittest.TestCase):
 
         doc_id = utils.get_doc_id(self.config['containers'][0]['account'],
                                   self.container, object_name)
-        es_doc = self.es_conn.get(self.index, 'object', doc_id)
+        es_doc = self.es_conn.get(self.index, doc_id)
         self.assertEqual('sample meta', es_doc['_source']['foo'])
         self.assertEqual(u'unicode h\u00e9ader',
                          es_doc['_source'][u'\u062a-bar'])
@@ -93,13 +97,13 @@ class MetadataSyncTest(unittest.TestCase):
         # not found
         doc_id = utils.get_doc_id(self.config['containers'][0]['account'],
                                   self.container, object_name)
-        self.es_conn.get(self.index, '_all', doc_id)
+        self.es_conn.get(self.index, doc_id)
 
         self.client.delete_object(self.container, object_name)
         self.indexer.run_once()
 
         with self.assertRaises(elasticsearch.TransportError) as ctx:
-            self.es_conn.get(self.index, '_all', doc_id)
+            self.es_conn.get(self.index, doc_id)
         self.assertEqual(404, ctx.exception.status_code)
 
     def test_indexes_slos(self):
@@ -120,6 +124,11 @@ class MetadataSyncTest(unittest.TestCase):
 
         doc_id = utils.get_doc_id(self.config['containers'][0]['account'],
                                   self.container, slo_key)
-        resp = self.es_conn.get(self.index, '_all', doc_id)
+        resp = self.es_conn.get(self.index, doc_id)
         self.assertEqual('true', resp['_source']['x-static-large-object'])
         self.assertEqual(u'valu\ue009', resp['_source'][u'sl\u00f6'])
+
+
+class MetadataSync6xTest(MetadataSyncTest):
+    ES_HOST = 'https://localhost:9201'
+    ES_VERSION = os.environ['OLD_ES_VERSION']

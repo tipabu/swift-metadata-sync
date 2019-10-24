@@ -3,7 +3,6 @@ from container_crawler import crawler
 import elasticsearch
 import hashlib
 import json
-import os
 from swift_metadata_sync import metadata_sync
 
 
@@ -60,9 +59,9 @@ def get_es_connection(host, verify_certs, ca_certs):
         host, verify_certs=verify_certs, ca_certs=ca_certs)
 
 
-def get_ca_cert():
+def get_ca_cert(version):
     return '/'.join((
-        '', 'elasticsearch-%s' % os.environ['ES_VERSION'],
+        '', 'elasticsearch-{}'.format(version),
         'config', 'ca', 'ca.crt'))
 
 

@@ -53,11 +53,12 @@ class TestMetadataSync(unittest.TestCase):
                           'container': self.test_container}
 
         self.es_mock = mock.Mock()
-        self.es_mock.info.return_value = {'version': {'number': '2.2.0'}}
+        self.es_mock.info.return_value = {'version': {'number': '7.4.0'}}
         mock_es.return_value = self.es_mock
 
         self.sync = metadata_sync.MetadataSync(self.status_dir,
                                                self.sync_conf)
+        self.sync._doc_type = metadata_sync.MetadataSync.DEFAULT_DOC_TYPE
 
     @staticmethod
     def compute_id(account, container, obj):
@@ -254,7 +255,6 @@ class TestMetadataSync(unittest.TestCase):
             '_id': self.compute_id(
                 self.test_account, self.test_container, row['name']),
             '_index': self.test_index,
-            '_type': metadata_sync.MetadataSync.DOC_TYPE
         } for row in rows]
         helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
                                                   expected_delete_ops,
@@ -277,7 +277,6 @@ class TestMetadataSync(unittest.TestCase):
             '_id': self.compute_id(
                 self.test_account, self.test_container, row['name']),
             '_index': self.test_index,
-            '_type': metadata_sync.MetadataSync.DOC_TYPE
         } for row in rows]
         helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
                                                   expected_delete_ops,
@@ -298,7 +297,6 @@ class TestMetadataSync(unittest.TestCase):
             '_id': self.compute_id(
                 self.test_account, self.test_container, row['name']),
             '_index': self.test_index,
-            '_type': metadata_sync.MetadataSync.DOC_TYPE
         } for row in rows]
         helpers_mock.bulk.assert_called_once_with(self.sync._es_conn,
                                                   expected_delete_ops,
@@ -336,7 +334,6 @@ class TestMetadataSync(unittest.TestCase):
         expected_ops = [{
             '_op_type': 'index',
             '_index': self.test_index,
-            '_type': metadata_sync.MetadataSync.DOC_TYPE,
             '_id': self.compute_id(
                 self.test_account, self.test_container, 'object_%d' % i),
             '_source': {
@@ -395,7 +392,6 @@ class TestMetadataSync(unittest.TestCase):
         expected_ops = [{
             '_op_type': 'index',
             '_index': self.test_index,
-            '_type': metadata_sync.MetadataSync.DOC_TYPE,
             '_id': self.compute_id(
                 self.test_account, self.test_container, 'object'),
             '_source': {
@@ -447,7 +443,6 @@ class TestMetadataSync(unittest.TestCase):
         expected_ops = [{
             '_op_type': 'index',
             '_index': self.test_index,
-            '_type': metadata_sync.MetadataSync.DOC_TYPE,
             '_id': self.compute_id(
                 self.test_account, self.test_container, rows[0]['name']),
             '_source': {
@@ -477,21 +472,18 @@ class TestMetadataSync(unittest.TestCase):
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
     def test_verify_mapping(self, es_mock, index_mock):
         full_mapping = metadata_sync.MetadataSync.DOC_MAPPING
-        swift_type = metadata_sync.MetadataSync.DOC_TYPE
 
         # List of tuples of mappings to test: the mapping returned by ES and
         # the mapping we expect to submit to the put_mapping call.
         test_mappings = [
             ({self.test_index: {"mappings": {}}}, full_mapping),
-            ({self.test_index: {"mappings": {"bogus_type": full_mapping}}},
-             full_mapping),
-            ({self.test_index: {"mappings": {swift_type: {
+            ({self.test_index: {"mappings": {
                 "properties": {
                     "content-length": {"type": "string"},
                     "x-timestamp": {"type": "string"},
                     "x-trans-id": {"type": "string"}
                 }
-            }}}}, {
+            }}}, {
                 "content-type": {"type": "string"},
                 "last-modified": {"type": "date"},
                 "etag": {"type": "string", "index": "not_analyzed"},
@@ -501,8 +493,8 @@ class TestMetadataSync(unittest.TestCase):
                 "x-swift-account": {"type": "string"},
                 "x-swift-object": {"type": "string"},
             }),
-            ({self.test_index: {"mappings": {swift_type: {
-                "properties": full_mapping}}}},
+            ({self.test_index: {"mappings": {
+                "properties": full_mapping}}},
              {})
         ]
 
@@ -517,8 +509,9 @@ class TestMetadataSync(unittest.TestCase):
 
             if expected_put_mapping:
                 index_conn.put_mapping.assert_called_once_with(
-                    index=self.test_index, doc_type=swift_type,
-                    body={"properties": expected_put_mapping})
+                    index=self.test_index,
+                    body={"properties": expected_put_mapping},
+                    include_type_name=False)
             else:
                 index_conn.put_mapping.assert_not_called()
 
@@ -526,9 +519,29 @@ class TestMetadataSync(unittest.TestCase):
         'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    def test_verify_mapping_multiple_mappings(self, es_mock, index_mock):
+        mapping_resp = {self.test_index: {
+            "mappings": {
+                "bogus_type": metadata_sync.MetadataSync.DOC_MAPPING}}}
+        es_conn = mock.Mock()
+        es_conn.info.return_value = {'version': {'number': '6.8.0'}}
+        index_conn = mock.Mock()
+        index_conn.get_mapping.return_value = mapping_resp
+        es_mock.return_value = es_conn
+        index_mock.return_value = index_conn
+        with self.assertRaises(RuntimeError) as err_ctx:
+            metadata_sync.MetadataSync(self.status_dir, self.sync_conf)
+        self.assertEqual('Cannot set more than one mapping type for index {}. '
+                         "Known types: ['bogus_type']".format(self.test_index),
+                         err_ctx.exception.message)
+
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
     def test_verify_mapping_5x(self, es_mock, index_mock):
         full_mapping = metadata_sync.MetadataSync.DOC_MAPPING
-        swift_type = metadata_sync.MetadataSync.DOC_TYPE
+        swift_type = metadata_sync.MetadataSync.OLD_DOC_TYPE
 
         # Test that "string" mappings are converted to keyword or text or both.
         current_mapping = dict([(k, v) for k, v in full_mapping.items()
@@ -657,10 +670,12 @@ class TestMetadataSync(unittest.TestCase):
         self.sync.logger.error.assert_has_calls(expected_error_calls)
 
     @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
+    @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.helpers')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
-    def test_parse_json(self, mock_es, mock_helpers):
+    def test_parse_json(self, mock_es, mock_helpers, index_mock):
         test_cases = [
             ('{"bool": true, "number": 1234, "string": "foo"}', True),
             ('{regular meta}', False)
@@ -675,6 +690,11 @@ class TestMetadataSync(unittest.TestCase):
         es_mock = mock_es.return_value
         es_mock.info.return_value = {'version': {'number': '5.4.0'}}
         es_mock.mget.return_value = {'docs': [{'_id': doc_id, 'found': False}]}
+
+        index_mock.return_value.get_mapping.return_value = {
+            self.test_index: {
+                'mappings': {
+                    'properties': metadata_sync.MetadataSync.DOC_MAPPING}}}
 
         sync_conf = dict(self.sync_conf)
         sync_conf['parse_json'] = True
@@ -705,7 +725,7 @@ class TestMetadataSync(unittest.TestCase):
                     {'_op_type': 'index',
                      '_id': doc_id,
                      '_index': self.test_index,
-                     '_type': metadata_sync.MetadataSync.DOC_TYPE,
+                     '_type': metadata_sync.MetadataSync.DEFAULT_DOC_TYPE,
                      '_source': {
                          'test': expected,
                          'x-timestamp': 0,
@@ -716,10 +736,12 @@ class TestMetadataSync(unittest.TestCase):
                 raise_on_error=False,
                 raise_on_exception=False)
 
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
     @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
-    def test_set_pipeline(self, es_mock, helpers_mock):
+    def test_set_pipeline(self, es_mock, helpers_mock, index_mock):
         pipeline = 'test-pipeline'
         obj = 'object'
         doc_id = self.compute_id(self.test_account, self.test_container, obj)
@@ -728,7 +750,7 @@ class TestMetadataSync(unittest.TestCase):
         config['pipeline'] = pipeline
 
         es_mock.return_value.info.return_value = {
-            'version': {'number': '5.4.0'}}
+            'version': {'number': '7.4.0'}}
         es_mock.return_value.mget.return_value = {
             'docs': [{'_id': doc_id, 'found': False}]}
         internal_client = mock.Mock()
@@ -737,6 +759,10 @@ class TestMetadataSync(unittest.TestCase):
             'last-modified': 'Wed, 06 Jun 2018 22:24:19 GMT'
         }
         helpers_mock.bulk.return_value = (None, [])
+        index_mock.return_value.get_mapping.return_value = {
+            self.test_index: {
+                'mappings': {
+                    'properties': metadata_sync.MetadataSync.DOC_MAPPING}}}
 
         sync = metadata_sync.MetadataSync(self.status_dir, config)
         sync.handle([{'name': obj, 'deleted': False, 'created_at': 0}],
@@ -746,7 +772,6 @@ class TestMetadataSync(unittest.TestCase):
             [{'_op_type': 'index',
               '_id': doc_id,
               '_index': self.test_index,
-              '_type': metadata_sync.MetadataSync.DOC_TYPE,
               '_source': {
                   'x-timestamp': 0,
                   'last-modified': 1528323859000,
@@ -758,17 +783,62 @@ class TestMetadataSync(unittest.TestCase):
             raise_on_error=False,
             raise_on_exception=False)
 
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
     @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
-    def test_index_booleans(self, es_mock, helpers_mock):
+    def test_bulk_index_before_7x(self, es_mock, helpers_mock, index_mock):
+        obj = 'object'
+        doc_id = self.compute_id(self.test_account, self.test_container, obj)
+
+        es_mock.return_value.info.return_value = {
+            'version': {'number': '6.8.0'}}
+        es_mock.return_value.mget.return_value = {
+            'docs': [{'_id': doc_id, 'found': False}]}
+        internal_client = mock.Mock()
+        internal_client.get_object_metadata.return_value = {
+            'x-timestamp': 0,
+            'last-modified': 'Wed, 06 Jun 2018 22:24:19 GMT'
+        }
+        helpers_mock.bulk.return_value = (None, [])
+        index_mock.return_value.get_mapping.return_value = {
+            self.test_index: {
+                'mappings': {
+                    'properties': metadata_sync.MetadataSync.DOC_MAPPING}}}
+
+        sync = metadata_sync.MetadataSync(self.status_dir, self.sync_conf)
+        sync.handle([{'name': obj, 'deleted': False, 'created_at': 0}],
+                    internal_client)
+        helpers_mock.bulk.assert_called_once_with(
+            es_mock.return_value,
+            [{'_op_type': 'index',
+              '_id': doc_id,
+              '_index': self.test_index,
+              '_type': metadata_sync.MetadataSync.DEFAULT_DOC_TYPE,
+              '_source': {
+                  'x-timestamp': 0,
+                  'last-modified': 1528323859000,
+                  'x-swift-account': self.test_account,
+                  'x-swift-container': self.test_container,
+                  'x-swift-object': obj}
+              }],
+            raise_on_error=False,
+            raise_on_exception=False)
+
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.client.IndicesClient')
+    @mock.patch('swift_metadata_sync.metadata_sync.elasticsearch.helpers')
+    @mock.patch(
+        'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
+    def test_index_booleans(self, es_mock, helpers_mock, index_mock):
         obj = 'object'
         doc_id = self.compute_id(self.test_account, self.test_container, obj)
 
         config = dict(self.sync_conf)
 
         es_mock.return_value.info.return_value = {
-            'version': {'number': '5.4.0'}}
+            'version': {'number': '7.4.0'}}
         es_mock.return_value.mget.return_value = {
             'docs': [{'_id': doc_id, 'found': False}]}
         internal_client = mock.Mock()
@@ -778,6 +848,10 @@ class TestMetadataSync(unittest.TestCase):
             'last-modified': 'Wed, 06 Jun 2018 22:24:19 GMT'
         }
         helpers_mock.bulk.return_value = (None, [])
+        index_mock.return_value.get_mapping.return_value = {
+            self.test_index: {
+                'mappings': {
+                    'properties': metadata_sync.MetadataSync.DOC_MAPPING}}}
 
         sync = metadata_sync.MetadataSync(self.status_dir, config)
         sync.handle([{'name': obj, 'deleted': False, 'created_at': 0}],
@@ -787,7 +861,6 @@ class TestMetadataSync(unittest.TestCase):
             [{'_op_type': 'index',
               '_id': doc_id,
               '_index': self.test_index,
-              '_type': metadata_sync.MetadataSync.DOC_TYPE,
               '_source': {
                   'x-timestamp': 0,
                   'last-modified': 1528323859000,
@@ -820,11 +893,12 @@ class TestMetadataSyncFactory(unittest.TestCase):
             'parse_json': True,
             'pipeline': 'es-pipeline'}
         mock_es = mock.Mock()
-        mock_es.info.return_value = {'version': {'number': '6.1.1'}}
+        mock_es.info.return_value = {'version': {'number': '7.4.0'}}
         elastic_constructor_mock.return_value = mock_es
         index_mock.return_value.get_mapping.return_value = {
             instance_settings['index']: {
-                'mappings': metadata_sync.MetadataSync.DOC_MAPPING}}
+                'mappings': {
+                    'properties': metadata_sync.MetadataSync.DOC_MAPPING}}}
 
         factory = metadata_sync.MetadataSyncFactory(config)
         instance = factory.instance(instance_settings, True)
