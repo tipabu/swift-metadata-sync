@@ -256,7 +256,10 @@ class MetadataSync(BaseSync):
             # used the type "object" (OLD_DOC_TYPE). New indices (with no
             # mappings) in Elasticsearch 6.x use type _doc. Elasticsearch 7
             # omits types altogether.
-            self._doc_type = self.DEFAULT_DOC_TYPE
+            if self._server_version >= StrictVersion('6.0'):
+                self._doc_type = self.DEFAULT_DOC_TYPE
+            else:
+                self._doc_type = self.OLD_DOC_TYPE
         else:
             if 'properties' in mapping[self._index]['mappings']:
                 self._doc_type = self.DEFAULT_DOC_TYPE
@@ -274,7 +277,7 @@ class MetadataSync(BaseSync):
                             self._index,
                             mapping[self._index]['mappings'].keys()))
                 current_mapping = mapping[self._index]['mappings'][
-                    self._doc_type]['properties']
+                    self._doc_type].get('properties', {})
             # We are not going to force re-indexing, so won't be checking the
             # mapping format
             missing_fields = [key for key in self.DOC_MAPPING.keys()
@@ -289,7 +292,14 @@ class MetadataSync(BaseSync):
             if self._server_version >= StrictVersion('5.0'):
                 new_mapping = dict([(k, self._update_string_mapping(v))
                                     for k, v in new_mapping.items()])
-            if self._doc_type == self.DEFAULT_DOC_TYPE:
+            if self._server_version < StrictVersion('6.0'):
+                # For 5.x Elasticsearch servers, we cannot set
+                # include_type_name
+                index_client.put_mapping(index=self._index,
+                                         body={'properties': new_mapping},
+                                         doc_type=self._doc_type,
+                                         include_type_name=None)
+            elif self._doc_type == self.DEFAULT_DOC_TYPE:
                 index_client.put_mapping(index=self._index,
                                          body={'properties': new_mapping},
                                          include_type_name=False)

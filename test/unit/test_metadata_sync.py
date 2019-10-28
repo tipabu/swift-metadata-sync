@@ -471,7 +471,9 @@ class TestMetadataSync(unittest.TestCase):
     @mock.patch(
         'swift_metadata_sync.metadata_sync.elasticsearch.Elasticsearch')
     def test_verify_mapping(self, es_mock, index_mock):
-        full_mapping = metadata_sync.MetadataSync.DOC_MAPPING
+        full_mapping = {
+            key: metadata_sync.MetadataSync._update_string_mapping(val)
+            for key, val in metadata_sync.MetadataSync.DOC_MAPPING.items()}
 
         # List of tuples of mappings to test: the mapping returned by ES and
         # the mapping we expect to submit to the put_mapping call.
@@ -495,23 +497,37 @@ class TestMetadataSync(unittest.TestCase):
             }),
             ({self.test_index: {"mappings": {
                 "properties": full_mapping}}},
-             {})
+             {}),
+            ({self.test_index: {'mappings': {
+                metadata_sync.MetadataSync.OLD_DOC_TYPE: {}}}},
+             full_mapping),
         ]
 
         for return_mapping, expected_put_mapping in test_mappings:
             es_conn = mock.Mock()
-            es_conn.info.return_value = {'version': {'number': '2.2.0'}}
+            es_conn.info.return_value = {'version': {'number': '7.4.0'}}
             index_conn = mock.Mock()
             index_conn.get_mapping.return_value = return_mapping
             es_mock.return_value = es_conn
             index_mock.return_value = index_conn
             metadata_sync.MetadataSync(self.status_dir, self.sync_conf)
 
+            expected_put_mapping = {
+                key: metadata_sync.MetadataSync._update_string_mapping(val)
+                for key, val in expected_put_mapping.items()}
+
+            return_mappings = return_mapping[self.test_index]['mappings']
             if expected_put_mapping:
-                index_conn.put_mapping.assert_called_once_with(
-                    index=self.test_index,
-                    body={"properties": expected_put_mapping},
-                    include_type_name=False)
+                if not return_mappings or 'properties' in return_mappings:
+                    index_conn.put_mapping.assert_called_once_with(
+                        index=self.test_index,
+                        body={"properties": expected_put_mapping},
+                        include_type_name=False)
+                else:
+                    index_conn.put_mapping.assert_called_once_with(
+                        index=self.test_index,
+                        body={"properties": expected_put_mapping},
+                        doc_type=return_mappings.keys()[0])
             else:
                 index_conn.put_mapping.assert_not_called()
 
@@ -579,7 +595,8 @@ class TestMetadataSync(unittest.TestCase):
 
         index_conn.put_mapping.assert_called_once_with(
             index=self.test_index, doc_type=swift_type,
-            body={'properties': expected_mapping})
+            body={'properties': expected_mapping},
+            include_type_name=None)
 
     def test_unicode_document_id(self):
         row = {'name': u'monkey-\U0001f435'.encode('utf-8')}
