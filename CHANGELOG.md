@@ -1,3 +1,10 @@
+## 0.0.18 (2019-10-29)
+
+Features:
+
+- Added support for Elasticsearch 7.x. NOTE: Elasticsearch 5.x has reached its
+  end of life and the support for it will be removed in a future release.
+
 ## 0.0.17 (2019-09-11)
 
 Bug fixes:
