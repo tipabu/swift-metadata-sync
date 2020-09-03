@@ -6,7 +6,7 @@ RUN apt-get update &&\
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements-test.txt /tmp/
-RUN pip install -e git://github.com/swiftstack/container-crawler.git@0.1.10#egg=container-crawler && \
+RUN pip install -e git://github.com/swiftstack/container-crawler.git@0.1.11#egg=container-crawler && \
     pip install -r /tmp/requirements-test.txt -r /tmp/requirements.txt && \
     pip uninstall -y hacking
 
